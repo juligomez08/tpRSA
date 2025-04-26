@@ -1,5 +1,4 @@
-
-
+#FUNCIONES
 def es_primo(n):                             
     if n < 2:
         return False
@@ -16,39 +15,65 @@ def mcd(e, phi):
     return e          # cuando lleogo a 0 ya devuelve el mcd
 
 
-#def inversa_modular(e, phi):         ESTO ME LO HIZO CHAT DEBERIA SER LA COSA DE EUCLIDES EN VERSION BIEN HECHO EL MIO ESTA HARDCODEADO
-    # Guardamos valores originales
-    original_phi = phi
-    x0, x1 = 0, 1
+# 1. Algoritmo extendido de Euclides
+def extendido_mcd(a,b):
+    if b == 0:
+        return a, 1, 0
+    else:
+        mcd, x1, y1 = extendido_mcd(b, a % b)
+        x = y1
+        y = x1 - (a // b) * y1
+        return mcd , x, y
 
-    while e > 1:
-        # Calculamos cociente
-        q = e // phi
-        # Actualizamos e y phi
-        e, phi = phi, e % phi
-        # Actualizamos x
-        x0, x1 = x1 - q * x0, x0
-
-    # Aseguramos que el resultado sea positivo
-    if x1 < 0:
-        x1 += original_phi
-
-    return x1
-
+# 2. Inverso modular
+def inverso_modular (e , phi):
+    mcd, x, y = extendido_mcd(e, phi)
+    if mcd != 1:
+        raise Exception ("No existe inverso modular")
+    else:
+        return x % phi
 
 
+#EXPONENCIACION RAPIDA
+def fast_exp(base, exp, mod):
+    result = 1
+    base = base % mod
+    while exp > 0:
+        if exp % 2 == 1:
+            result = (result * base) % mod
+        exp = exp // 2
+        base = (base * base) % mod
+    return result
+
+#TEOREMA DE RESTOS CHINOS
+def chinos(m_cifrado, p,q, d):
+    md = m_cifrado**d
+    mp = md % p
+    mq = md % q
+    q_inv = inverso_modular(q,p)
+    p_inv = inverso_modular(p,q)
+    mensaje = ((mp * q * q_inv) + (mq * p * p_inv)) % n
+    return mensaje
+
+
+#PROGRAMA PRINCIPAL
+#MENSAJE A CIFRAR
+mensaje= int(input("Ingrese el mensaje a encriptar:" ))
+n=0
 #PIDO VALORES FIJOS DE P Y Q Y ME FIJO QUE SEAN PRIMOS DISTINTOS (MAS ADELANTE LO HACEMOS DE OTRA FORMA)
-p=int(input("p= "))
-while es_primo(p)==False:
-	print("ingrese un numero primo: ")
-	p=int(input("p= "))
-q=int(input("q= "))
-while es_primo(q)==False or p==q:
-	print("ingrese un numero primo diferente de p: ")
-	q=int(input("q= "))
+while mensaje >= n-1:
+    p=int(input("p= "))
+    while es_primo(p)==False:
+        print("ingrese un numero primo: ")
+        p=int(input("p= "))
+    q=int(input("q= "))
+    while es_primo(q)==False or p==q:
+        print("ingrese un numero primo diferente de p: ")
+        q=int(input("q= "))
+    n = p * q
+    if mensaje >=n-1:
+        print("elija números primos más grandes")
 
-#CALCULO N
-n = p * q
 print("el valor de n es: ", n)
 
 #CALCULO PHI
@@ -67,20 +92,22 @@ print("posibles valores de e: ", valores_de_e)
 while mcd(e, phi)!=1:
      print("elija un valor de la lista: ")
      e = int(input("e= "))
-       
 
-# CÁLCULO DE LA INVERSA MODULAR D, TAL QUE: (d * e) ≡ 1 mod phi
-k = 1
-while (1 + k * phi) % e != 0:  # Buscamos el menor k tal que (1 + k * phi) sea divisible por e
-    k += 1
-# Una vez que encontramos ese k, calculamos d
-d = (1 + k * phi) // e  
+#CALCULAR D
+d = inverso_modular(e,phi)
 
-print("El valor de d es:", d)
+# Mostrar claves
+print("Clave pública (n, e):", (n, e))
+print("Clave privada d:", d)
 
-#d = inversa_modular(e, phi)    LLAMA AL CODIGO DE CHAT
-#print("El valor de d es:", d)
+x = fast_exp(mensaje, e, n)  # mensaje cifrado
+print("Mensaje cifrado:", x)
 
+# 6. Descifrado
+m_descifrado1 = fast_exp(x, d, n)
+m_descifrado = chinos(x,p,q,d)
+print("Mensaje descifrado ER:", m_descifrado)
+print("Mensaje descifrado TCR:", m_descifrado1)
 
 
 
