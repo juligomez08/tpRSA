@@ -109,12 +109,17 @@ def xor(a,b):
     return result
 
 def expan(bina):
-    aux = bina
-    aux2=bina
-    binaant = bina[:8]
-    binapost = aux2[40:]
-    bina= binaant+ aux + binapost
-    return bina
+    E = [
+        32, 1, 2, 3, 4, 5,
+        4, 5, 6, 7, 8, 9,
+        8, 9,10,11,12,13,
+        12,13,14,15,16,17,
+        16,17,18,19,20,21,
+        20,21,22,23,24,25,
+        24,25,26,27,28,29,
+        28,29,30,31,32,1
+    ]
+    return ''.join(bina[i - 1] for i in E)
 
 def aplicar_sboxes(bloque_48bits):
     resultado = ""
@@ -134,29 +139,71 @@ def aplicar_sboxes(bloque_48bits):
 
 def feistel(leftant, rightant, k):
     P = [
-    16, 7, 20, 21,
-    29, 12, 28, 17,
-    1, 15, 23, 26,
-    5, 18, 31, 10,
-    2, 8, 24, 14,
-    32, 27, 3, 9,
-    19, 13, 30, 6,
-    22, 11, 4, 25
+        16, 7, 20, 21,
+        29, 12, 28, 17,
+        1, 15, 23, 26,
+        5, 18, 31, 10,
+        2, 8, 24, 14,
+        32, 27, 3, 9,
+        19, 13, 30, 6,
+        22, 11, 4, 25
     ]
-    rightant = expan(rightant)
-    print("rightant")
-    print(rightant)
-    print("k")
-    print(k)
-    B = xor(rightant, k)
-    B= aplicar_sboxes(B)
-    B = permutar(B,P)
-    B = xor(B, leftant)
+    right_exp = expan(rightant)
+    B = xor(right_exp, k)
+    B = aplicar_sboxes(B)
+    B = permutar(B, P)
+    return xor(leftant, B)  # Retorna el nuevo bloque derecho
+
 
 def permutar(cadena, tabla):
     return ''.join(cadena[i - 1] for i in tabla)
 
-def des(x, K):
+def rotar_izq(bits, n):
+    return bits[n:] + bits[:n]
+
+def generar_subclaves(K):
+    # Paso 1: convertir a binario
+    K_bin = transfABin(K)  # tu función para pasar a binario
+    # Paso 2: PC-1
+    PC_1 = [
+    57, 49, 41, 33, 25, 17, 9,
+    1, 58, 50, 42, 34, 26, 18,
+    10, 2, 59, 51, 43, 35, 27,
+    19, 11, 3, 60, 52, 44, 36,
+    63, 55, 47, 39, 31, 23, 15,
+    7, 62, 54, 46, 38, 30, 22,
+    14, 6, 61, 53, 45, 37, 29,
+    21, 13, 5, 28, 20, 12, 4] # como la tabla de arriba
+    K_permutado = ''.join(K_bin[i - 1] for i in PC_1)
+
+    C = K_permutado[:28]
+    D = K_permutado[28:]
+
+    SHIFT_ROUNDS = [1, 1, 2, 2, 2, 2, 2, 2,
+                    1, 2, 2, 2, 2, 2, 2, 1]
+
+    PC_2 = [
+    14, 17, 11, 24, 1, 5,
+    3, 28, 15, 6, 21, 10,
+    23, 19, 12, 4, 26, 8,
+    16, 7, 27, 20, 13, 2,
+    41, 52, 31, 37, 47, 55,
+    30, 40, 51, 45, 33, 48,
+    44, 49, 39, 56, 34, 53,
+    46, 42, 50, 36, 29, 32]  # como la tabla de arriba
+
+    subclaves = []
+
+    for shift in SHIFT_ROUNDS:
+        C = rotar_izq(C, shift)
+        D = rotar_izq(D, shift)
+        CD = C + D
+        subclave = ''.join(CD[i - 1] for i in PC_2)
+        subclaves.append(subclave)
+
+    return subclaves
+
+def des(x, K, cifrar):
     IP = [
     58, 50, 42, 34, 26, 18, 10, 2,
     60, 52, 44, 36, 28, 20, 12, 4,
@@ -175,16 +222,21 @@ def des(x, K):
     35, 3, 43, 11, 51, 19, 59, 27,
     34, 2, 42, 10, 50, 18, 58, 26,
     33, 1, 41,  9, 49, 17, 57, 25]
+    subclaves = generar_subclaves(K)
+    #print("subclaves", subclaves)
     x = permutar (x,IP)
-    K = transfABin(K)
     left = x[:32]
-    #print("left" + left)
     right = x[32:]
-    #print("right" + right)
-    for i in range(15):
-        auxleft = left # pongo esto ya que desp modificamos left y no queremos perder el anterior
-        left = right
-        right = feistel(auxleft, left, K)
+    if cifrar == True:
+        for i in range(16):
+            auxleft = left # pongo esto ya que desp modificamos left y no queremos perder el anterior
+            left = right
+            right = feistel(auxleft, left, subclaves[i])
+    else: 
+        for i in reversed(range(16)):
+            auxleft = left # pongo esto ya que desp modificamos left y no queremos perder el anterior
+            left = right
+            right = feistel(auxleft, left, subclaves[i])
     x = permutar(right + left, IP_inv)
     return x
 
@@ -195,21 +247,38 @@ def cifrar(bloquesm, IV, K):
         if i == 0: 
             IV = transfABin(IV)
             x = xor(bloquem, IV)#bloque de 64 bits 
-            x = des(x, K)
-            print(x)
-            bloquesx[i] = x
         else:
-            print("no") 
            # bloques x en i-1
+           x = xor(bloquem, bloquesx[i-1])
+        x = des(x,K, True)
+        bloquesx[i] = x
+    return bloquesx
 
-
+def descifrar(mensajecifrado, IV,K):
+    diccMensaje = {}
+    for i in mensajecifrado:
+        IV = transfABin(IV)
+        m = des(mensajecifrado[i], K, False)
+        if i== 0:
+            m = xor(m,transfABin(IV))
+        else:
+            m = xor(m,mensajecifrado[i-1])
+        diccMensaje[i] = m
+    return diccMensaje
+        
 
 m = "3f5200ae7d152ae4a2eb6c3daf0303030303"
 bloques = separarbloques(m)
 IV = "52a5b96f8d221b56"
-K = "45DF9D2B3A63"
+K = "45DF9D2B3A635414"
 
 mensajecifrado = cifrar(bloques, IV, K)
+print("bloques" , bloques)
+print("cifrado" , mensajecifrado)
+mensajeOriginal = descifrar(mensajecifrado, IV, K)
+for i in range(len(mensajeOriginal)):
+    msj = transfAHexa(mensajeOriginal[i])
+    print("bloque" , i , msj)
     
     
         
