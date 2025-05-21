@@ -242,32 +242,50 @@ def des(x, K, cifrar):
 
 def cifrar(bloquesm, IV, K):
     bloquesx = {}
+    IV = transfABin(IV)
     for i in bloquesm:
         bloquem = transfABin(bloquesm[i])
         if i == 0: 
-            IV = transfABin(IV)
             x = xor(bloquem, IV)#bloque de 64 bits 
         else:
            # bloques x en i-1
            x = xor(bloquem, bloquesx[i-1])
-        x = des(x,K, True)
-        bloquesx[i] = x
+        bloquesx[i] = des(x,K, True)
     return bloquesx
+
+def validarPadding(ultBloque):
+    try:
+        ultimovalorCad = ultBloque[-2:]
+        ultimovalorInt = int(ultimovalorCad)
+        nuevacadena = ""
+        for i in range(ultimovalorInt):
+            nuevacadena = nuevacadena + ultimovalorCad #0505050505
+        if ultBloque[-(ultimovalorInt*2):] == nuevacadena: #verifica con los ultimos 10 (en el caso de 05)
+            return ultBloque[:16-(ultimovalorInt*2)] # retorna los primeros 6
+        else:
+            return False
+    except: #hacemos este try except por si los atacantes usan un padding que no sea numerico
+        return False
 
 def descifrar(mensajecifrado, IV,K):
     diccMensaje = {}
+    IV = transfABin(IV)
     for i in mensajecifrado:
-        IV = transfABin(IV)
         m = des(mensajecifrado[i], K, False)
         if i== 0:
-            m = xor(m,transfABin(IV))
+            m = xor(m,IV)
         else:
             m = xor(m,mensajecifrado[i-1])
-        diccMensaje[i] = m
-    return diccMensaje
+        diccMensaje[i] = transfAHexa(m)
+    paddingvalidado = validarPadding(diccMensaje[i])
+    if  paddingvalidado != False:
+        diccMensaje[i] = paddingvalidado
+        return diccMensaje
+    else: 
+        return False
         
 
-m = "3f5200ae7d152ae4a2eb6c3daf0303030303"
+m = "3f5200ae7d152ae44a5f4a6b25a4d7f4c2b5d8e75d6d9c2b5a3b6f96ef5c2b2bfa2eb6c3daf0303030303"
 bloques = separarbloques(m)
 IV = "52a5b96f8d221b56"
 K = "45DF9D2B3A635414"
@@ -275,10 +293,14 @@ K = "45DF9D2B3A635414"
 mensajecifrado = cifrar(bloques, IV, K)
 print("bloques" , bloques)
 print("cifrado" , mensajecifrado)
-mensajeOriginal = descifrar(mensajecifrado, IV, K)
-for i in range(len(mensajeOriginal)):
-    msj = transfAHexa(mensajeOriginal[i])
-    print("bloque" , i , msj)
-    
+
+mensajetrucho = {0:"1010110101010111011111010000111000011111100101010010100100111101", 1: "1010110101010111011111010000111000011111100101010010100100111101"}
+mensajetrucho = descifrar(mensajetrucho, IV, K)
+#mensajeOriginal = descifrar(mensajecifrado, IV, K) #si queremos probar el mensajeoriginal cambiar los parametros del if de abajo y viceversa
+if mensajetrucho != False:
+    for i in range(len(mensajetrucho)):
+       print("bloque" , i , mensajetrucho[i])
+else:
+    print("Error Padding invalido")    
     
         
