@@ -16,7 +16,7 @@ def mcd(e, phi):
 
 
 # 1. Algoritmo extendido de Euclides
-def extendido_mcd(a,b):
+def extendido_mcd(a,b): # devuelve el MCD y el inverso modular 
     if b == 0:
         return a, 1, 0
     else:
