@@ -67,6 +67,12 @@ def transfABin(hexa):
     bina = "0" * faltan + bina
     return bina
 
+def transDecABin(numero):
+    if numero < 0 or numero >= 2**64:
+        raise ValueError("El número debe estar entre 0 y 2^63 - 1")
+    binario = bin(numero)[2:]  # Convierte a binario y elimina el prefijo '0b'
+    return binario.zfill(64) 
+
 def transfAHexa(binario):
     # Asegurarse de que la longitud del binario sea múltiplo de 4
     faltan = (4 - len(binario) % 4) % 4
@@ -275,15 +281,34 @@ def descifrar(mensajecifrado, IV,K):
         if i== 0:
             m = xor(m,IV)
         else:
-            m = xor(m,mensajecifrado[i-1])
+            m = xor(m,mensajecifrado[i-1]) #el atacante cambia el mensaje anterior con uno modificado 
+            #validacion padding 
         diccMensaje[i] = transfAHexa(m)
-    paddingvalidado = validarPadding(diccMensaje[i])
+    paddingvalidado = validarPadding(diccMensaje[i]) #capaz este padding lo podemos hacer antes y de guardarlo y que verifique antes para hacer lo del atacante
     if  paddingvalidado != False:
         diccMensaje[i] = paddingvalidado
         return diccMensaje
     else: 
         return False
         
+def descifrarAtacante(moriginal, IV, K): #agrego IV y K porque el atancante lo manda al servidor y este ya lo deberia saber 
+    minventado = ""
+    for i in range(1,257):
+        minventado = transDecABin(i)
+        mprueba = des(moriginal, K, False)
+        print("mprueba", mprueba)
+        mprueba = xor(mprueba,minventado)
+        print("xor",mprueba)
+        mprueba = validarPadding(mprueba)
+        if mprueba == False:
+            print("padding Invalido")
+        else:
+            print(minventado)
+            print("todo ok")
+
+
+
+
 
 m = "3f5200ae7d152ae44a5f4a6b25a4d7f4c2b5d8e75d6d9c2b5a3b6f96ef5c2b2bfa2eb6c3daf0303030303"
 bloques = separarbloques(m)
@@ -295,12 +320,88 @@ print("bloques" , bloques)
 print("cifrado" , mensajecifrado)
 
 mensajetrucho = {0:"1010110101010111011111010000111000011111100101010010100100111101", 1: "1010110101010111011111010000111000011111100101010010100100111101"}
-mensajetrucho = descifrar(mensajetrucho, IV, K)
+mensajetruchodescifrado = descifrar(mensajetrucho, IV, K)
 #mensajeOriginal = descifrar(mensajecifrado, IV, K) #si queremos probar el mensajeoriginal cambiar los parametros del if de abajo y viceversa
-if mensajetrucho != False:
-    for i in range(len(mensajetrucho)):
-       print("bloque" , i , mensajetrucho[i])
+if mensajetruchodescifrado != False:
+    for i in range(len(mensajetruchodescifrado)):
+       print("bloque" , i , mensajetruchodescifrado[i])
 else:
     print("Error Padding invalido")    
     
-        
+
+print("--------------------------------")
+
+#print("mensaje cifrado", mensajecifrado)
+#cifrapruebaatacante = "0000000000000000000000000000000000000000000000000000000000000001" 
+#mensajeatacante = descifrarAtacante(mensajecifrado[5], IV, K)
+
+def padding_oracle(bloque_anterior_bin: str, bloque_objetivo_bin: str, clave_hex: str) -> bool:
+    """
+    Oráculo que descifra el bloque objetivo usando el anterior y dice si el resultado tiene padding PKCS#7 válido.
+    """
+    # Descifrar c2 (bloque objetivo)
+    descifrado = des(bloque_objetivo_bin, clave_hex, False)
+
+    # Simular CBC: XOR con r (bloque anterior falso)
+    mensaje_bin = xor(descifrado, bloque_anterior_bin)
+
+    # Verificar padding PKCS#7 en binario
+    ultimo_byte = mensaje_bin[-8:]
+    padding_val = int(ultimo_byte, 2)
+
+    if padding_val < 1 or padding_val > 8:
+        return False
+
+    padding_esperado = f"{padding_val:08b}" * padding_val
+    return mensaje_bin[-padding_val * 8:] == padding_esperado
+
+def ataque_padding_oracle(c1: str, c2: str, clave: str) -> str:
+    bloque_tamaño = 64  # bits
+    m2 = [None] * 8
+    r = list("0" * bloque_tamaño)
+
+    for pos in reversed(range(8)):
+        padding_val = 8 - pos
+
+        # Ajustamos los bytes ya descubiertos
+        for j in range(pos + 1, 8):
+            m2_byte = int(m2[j], 16)
+            c1_byte = int(c1[j * 8:(j + 1) * 8], 2)
+            nuevo = padding_val ^ m2_byte ^ c1_byte
+            r[j * 8:(j + 1) * 8] = list(f"{nuevo:08b}")
+
+        # Buscamos el valor correcto del byte actual
+        for guess in range(256):
+            r[pos * 8:(pos + 1) * 8] = list(f"{guess:08b}")
+
+            if padding_oracle("".join(r), c2, clave):
+                d_byte = guess ^ padding_val
+                c1_byte = int(c1[pos * 8:(pos + 1) * 8], 2)
+                m2_byte = d_byte ^ c1_byte
+                m2[pos] = f"{m2_byte:02X}"  # Guardamos en HEX
+                break
+        else:
+            raise Exception(f"No se encontró padding válido en byte {pos}")
+
+    return "".join(m2)
+
+# Parámetros de prueba
+m = "3f5200ae7d152ae4a2eb6c3daf0303030303"
+IV = "52a5b96f8d221b56"
+K = "45DF9D2B3A635414"
+
+# Paso 1: Separar bloques y aplicar padding
+bloques = separarbloques(m)
+
+# Paso 2: Cifrar
+mensajecifrado = cifrar(bloques, IV, K)
+
+# Paso 3: Elegir los bloques
+c1 = mensajecifrado[0]
+c2 = mensajecifrado[1]
+
+# Paso 4: Ejecutar el ataque
+m2_hex = ataque_padding_oracle(c1, c2, K)
+
+print("\nBloque recuperado (m2) por ataque:", m2_hex)
+print("Bloque original (m2 real):", bloques[1].upper())
