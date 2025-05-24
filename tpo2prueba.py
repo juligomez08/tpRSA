@@ -1,69 +1,114 @@
-from typing import Dict
-import binascii
+def padding_oracle(bloque_anterior_bin: str, bloque_objetivo_bin: str, clave_hex: str) -> bool:
+    """
+    Oráculo que descifra el bloque objetivo usando el anterior y dice si el resultado tiene padding PKCS#7 válido.
+    """
+    # Descifrar c2 (bloque objetivo)
+    descifrado = des(bloque_objetivo_bin, clave_hex, False)
 
-# XOR simple entre dos bytearrays
-def xor_bytes(b1: bytes, b2: bytes) -> bytes:
-    return bytes(a ^ b for a, b in zip(b1, b2))
+    # Simular CBC: XOR con r (bloque anterior falso)
+    mensaje_bin = xor(descifrado, bloque_anterior_bin)
 
-# Función de "cifrado" y "descifrado" con XOR
-def xor_encrypt_decrypt(block: bytes, key: bytes) -> bytes:
-    return xor_bytes(block, key)
+    # Verificar padding PKCS#7 en binario
+    ultimo_byte = mensaje_bin[-8:]
+    padding_val = int(ultimo_byte, 2)
 
-# Simula un oracle que dice si el padding es válido o no
-def validar_padding(bloque: bytes) -> bool:
-    if not bloque:
+    if padding_val < 1 or padding_val > 8:
         return False
-    pad = bloque[-1]
-    if pad == 0 or pad > len(bloque):
-        return False
-    return bloque[-pad:] == bytes([pad] * pad)
 
-# Oracle: simula el servidor que valida si el padding es correcto
-def oracle(c1: bytes, c2: bytes, key: bytes) -> bool:
-    decrypted = xor_encrypt_decrypt(c2, key)
-    m2 = xor_bytes(decrypted, c1)
-    return validar_padding(m2)
+    padding_esperado = f"{padding_val:08b}" * padding_val
+    return mensaje_bin[-padding_val * 8:] == padding_esperado
 
-# Ataque Padding Oracle: recupera el bloque m2 a partir de c1 y c2
-def padding_oracle_attack(c1_hex: str, c2_hex: str, key_hex: str) -> str:
-    c1 = bytearray(binascii.unhexlify(c1_hex))
-    c2 = bytearray(binascii.unhexlify(c2_hex))
-    key = binascii.unhexlify(key_hex)
-    block_size = 8
-    recovered = bytearray(block_size)
+def ataque_padding_oracle_camila(c1_hex: str, c2_hex: str, clave_hex: str) -> str:
+    """
+    Ataque padding oracle sobre dos bloques de 8 bytes (16 hex cada uno).
+    Devuelve el mensaje descifrado del segundo bloque (m2) en hexadecimal.
+    """
+    m2 = [None] * 8
+    r_bin = list("0" * 64)  # r como lista binaria mutable de 64 bits
 
-    for i in range(1, block_size + 1):
-        prefix = bytearray(block_size - i)
-        padding_byte = i
-        suffix = bytearray(
-            (recovered[block_size - j] ^ padding_byte) for j in range(1, i)
-        )
+    # Recorremos desde el último byte al primero (posición 7 a 0)
+    for pos in reversed(range(8)):
+        padding_val = 8 - pos
 
+        # Ajustamos los bytes ya descubiertos (de pos+1 en adelante)
+        for j in range(pos + 1, 8):
+            m2_byte = int(m2[j], 16)
+            c1_byte = int(c1_hex[j * 2:(j + 1) * 2], 16)
+            nuevo_byte = padding_val ^ m2_byte ^ c1_byte
+            r_bin[j * 8:(j + 1) * 8] = list(f"{nuevo_byte:08b}")
+
+        # Buscamos el byte correcto para esta posición
         for guess in range(256):
-            attack_block = prefix + bytes([guess]) + suffix
-            if oracle(attack_block, c2, key):
-                recovered[block_size - i] = guess ^ padding_byte ^ c1[block_size - i]
+            r_bin[pos * 8:(pos + 1) * 8] = list(f"{guess:08b}")
+
+            # Unimos el binario y nos aseguramos de que tenga exactamente 64 bits
+            r_bin_str = "".join(r_bin)
+            r_bin_str = r_bin_str.ljust(64, "0")[:64]  # Si quedó corto, completamos con ceros
+
+            # Convertimos a HEX y nos aseguramos de tener exactamente 16 caracteres hexadecimales
+            r_hex = "".join([f"{int(r_bin_str[i:i+8], 2):02X}" for i in range(0, 64, 8)])
+            r_hex = r_hex.zfill(16)  # relleno con ceros a la izquierda si fuera necesario
+
+            # Oráculo
+            if padding_oracle(r_hex, c2_hex, clave_hex):
+                d_byte = guess ^ padding_val
+                c1_byte = int(c1_hex[pos * 2:(pos + 1) * 2], 16)
+                m2_byte = d_byte ^ c1_byte
+                m2[pos] = f"{m2_byte:02X}"
                 break
+        else:
+            raise Exception(f"No se encontró padding válido para el byte {pos}")
 
-    return binascii.hexlify(recovered).decode()
+    return "".join(m2)
 
-# Simulación de uso
-key_hex = "0102030405060708"  # clave de 8 bytes
-mensaje_original = b"ATAQUE\x02\x02"  # 6 bytes + padding PKCS#7 para 8 bytes
-key = binascii.unhexlify(key_hex)
+def ataque_padding_oracle(c1: str, c2: str, clave: str) -> str:
+    bloque_tamaño = 64  # bits
+    m2 = [None] * 8
+    r = list("0" * bloque_tamaño)
 
-# Cifrado CBC: c0 = IV, c1 = E(m1 ^ IV)
-IV = b"\x00\x00\x00\x00\x00\x00\x00\x00"
-m1 = xor_bytes(mensaje_original, IV)
-c1 = xor_encrypt_decrypt(m1, key)
+    for pos in reversed(range(8)):
+        padding_val = 8 - pos
 
-# Simular estructura de mensaje cifrado en dict
-mensajecifrado: Dict[int, str] = {0: binascii.hexlify(c1).decode()}
+        # Ajustamos los bytes ya descubiertos
+        for j in range(pos + 1, 8):
+            m2_byte = int(m2[j], 16)
+            c1_byte = int(c1[j * 8:(j + 1) * 8], 2)
+            nuevo = padding_val ^ m2_byte ^ c1_byte
+            r[j * 8:(j + 1) * 8] = list(f"{nuevo:08b}")
 
-# Ataque usando el oracle
-mensaje_descifrado = padding_oracle_attack(
-    binascii.hexlify(IV).decode(), mensajecifrado[0], key_hex
-)
-mensaje_descifrado_bytes = binascii.unhexlify(mensaje_descifrado)
+        # Buscamos el valor correcto del byte actual
+        for guess in range(256):
+            r[pos * 8:(pos + 1) * 8] = list(f"{guess:08b}")
 
-mensaje_descifrado_bytes.decode(errors="replace")  # Mostrar el resultado final
+            if padding_oracle("".join(r), c2, clave):
+                d_byte = guess ^ padding_val
+                c1_byte = int(c1[pos * 8:(pos + 1) * 8], 2)
+                m2_byte = d_byte ^ c1_byte
+                m2[pos] = f"{m2_byte:02X}"  # Guardamos en HEX
+                break
+        else:
+            raise Exception(f"No se encontró padding válido en byte {pos}")
+
+    return "".join(m2)
+
+# Parámetros de prueba
+m = "3f5200ae7d152ae4a2eb6c3daf0303030303"
+IV = "52a5b96f8d221b56"
+K = "45DF9D2B3A635414"
+
+# Paso 1: Separar bloques y aplicar padding
+bloques = separarbloques(m)
+print("paso 1", bloques)
+
+# Paso 2: Cifrar
+mensajecifrado = cifrar(bloques, IV, K)
+print("paso 2", mensajecifrado)
+# Paso 3: Elegir los bloques
+c1 = mensajecifrado[0]
+c2 = mensajecifrado[1]
+
+# Paso 4: Ejecutar el ataque
+m2_hex = ataque_padding_oracle(c1, c2, K)
+print("paso 4", m2_hex)
+print("\nBloque recuperado (m2) por ataque:", m2_hex)
+print("Bloque original (m2 real):", bloques[1].upper())
