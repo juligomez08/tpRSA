@@ -58,7 +58,6 @@ S_BOXES = [
     ]
 ]
 #FUNCIONES
-
 #pasar hexa a binario
 def transfABin(hexa):
     bina = bin(int(hexa, 16))[2:]
@@ -81,7 +80,6 @@ def transfAHexa(binario):
     hexa = hex(int(binario, 2))[2:].upper()
     return  hexa
 
-
 def separarbloques(mhexa):
     bloquesm ={}
     i = 0
@@ -89,9 +87,7 @@ def separarbloques(mhexa):
         bloquesm[i] = mhexa[:16] #son los primeros 16
         mhexa = mhexa[16:] # le sacamos los primeros 16
         i = i+1
-    print("antes de padding")
     bloquesm = padding(bloquesm, i-1)
-    print(bloquesm)
     return bloquesm
 
 def padding(diccionario, i):
@@ -158,10 +154,9 @@ def feistel(leftant, rightant, k):
     ]
     right_exp = expan(rightant)
     B = xor(right_exp, k)
-    B = aplicar_sboxes(B)
+    B = aplicar_sboxes(B) #aca tiene 32 bits
     B = permutar(B, P)
-    return xor(leftant, B)  # Retorna el nuevo bloque derecho
-
+    return xor(leftant, B)  # Retorna el nuevo bloque derecho 32
 
 def permutar(cadena, tabla):
     return ''.join(cadena[i - 1] for i in tabla)
@@ -181,7 +176,7 @@ def generar_subclaves(K):
     63, 55, 47, 39, 31, 23, 15,
     7, 62, 54, 46, 38, 30, 22,
     14, 6, 61, 53, 45, 37, 29,
-    21, 13, 5, 28, 20, 12, 4] # como la tabla de arriba
+    21, 13, 5, 28, 20, 12, 4] # como la tabla de arriba, transforma 64 bits a 56 bits 
     K_permutado = ''.join(K_bin[i - 1] for i in PC_1)
 
     C = K_permutado[:28]
@@ -254,7 +249,7 @@ def cifrar(bloquesm, IV, K):
     for i in bloquesm:
         bloquem = transfABin(bloquesm[i])
         if i == 0: 
-            x = xor(bloquem, IV)#bloque de 64 bits 
+            x = xor(bloquem, IV) #bloque de 64 bits 
         else:
            # bloques x en i-1
            x = xor(bloquem, bloquesx[i-1])
@@ -296,54 +291,7 @@ def descifrar(mensajecifrado, IV,K):
     else: 
         return False
 
-
-
-
-
-m = "3f5200ae7d152ae44a5f4a6b25a4d7f4c2b5d8e75d6d9c2b5a3b6f96ef5c2b2bfa2eb6c3daf0303030303"
-bloques = separarbloques(m)
-IV = "52a5b96f8d221b56"
-K = "45DF9D2B3A635414"
-
-mensajecifrado = cifrar(bloques, IV, K)
-print("bloques" , bloques)
-print("cifrado" , mensajecifrado)
-
-mensajetrucho = {0:"1010110101010111011111010000111000011111100101010010100100111101", 1: "1010110101010111011111010000111000011111100101010010100100111101"}
-mensajetruchodescifrado = descifrar(mensajetrucho, IV, K)
-mensajeOriginal = descifrar(mensajecifrado, IV, K) #si queremos probar el mensajeoriginal cambiar los parametros del if de abajo y viceversa
-if mensajeOriginal != False:
-    for i in range(len(mensajeOriginal)):
-       print("bloque" , i , mensajeOriginal[i])
-else:
-    print("Error Padding invalido")    
-    
-
-print("--------------------------------")
-
-
-
-def padding_oracle(bloque_anterior_bin: str, bloque_objetivo_bin: str, clave_hex: str) -> bool:
-    """
-    Oráculo que descifra el bloque objetivo usando el anterior y dice si el resultado tiene padding PKCS#7 válido.
-    """
-    # Descifrar c2 (bloque objetivo)
-    descifrado = des(bloque_objetivo_bin, clave_hex, False)
-
-    # Simular CBC: XOR con r (bloque anterior falso)
-    mensaje_bin = xor(descifrado, bloque_anterior_bin)
-
-    # Verificar padding PKCS#7 en binario
-    ultimo_byte = mensaje_bin[-8:] 
-    padding_val = int(ultimo_byte, 2)
-
-    if padding_val < 1 or padding_val > 8:
-        return False
-
-    padding_esperado = f"{padding_val:08b}" * padding_val
-    return mensaje_bin[-padding_val * 8:] == padding_esperado
-
-def ataque_padding_oracle(c1: str, c2: str, clave: str) -> str:
+def ataque_padding_oracle(c1, c2, clave) :
     bloque_tamaño = 64  # bits
     m2 = [None] * 8
     r = list("0" * bloque_tamaño)
@@ -366,7 +314,7 @@ def ataque_padding_oracle(c1: str, c2: str, clave: str) -> str:
             #print(prueba)
             if(len(prueba)<16):
                 prueba = "0" + prueba
-            if validarPadding(prueba) is not False:
+            if validarPadding(prueba)is not False:
                 d_byte = guess ^ padding_val
                 c1_byte = int(c1[pos * 8:(pos + 1) * 8], 2)
                 m2_byte = d_byte ^ c1_byte
@@ -377,42 +325,37 @@ def ataque_padding_oracle(c1: str, c2: str, clave: str) -> str:
 
     return "".join(m2)
 
-def ataque_padding_oracle3(c1: str, c2: str, clave: str) -> str:
-    bloque_tamaño = 64  # bits
-    m2 = [None] * 8
-    r = list("0" * bloque_tamaño)
+#Prueba de funcionamiento de cifrado y descifrado
+print("Prueba de Cifrado y Descifrado")
+m = "3f5200ae7d152ae44a5f4a6b25a4d7f4c2b5d8e75d6d9c2b5a3b6f96ef5c2b2bfa2eb6c3daf"
+bloques = separarbloques(m)
+IV = "52a5b96f8d221b56"
+K = "45DF9D2B3A635414"
 
-    for pos in reversed(range(8)):
-        padding_val = 8 - pos
+mensajecifrado = cifrar(bloques, IV, K)
+print("bloques + padding" , bloques)
+print("cifrado" , mensajecifrado)
+print("bloques descifrados:")
+mensajeOriginal = descifrar(mensajecifrado, IV, K) #si queremos probar el mensajeoriginal cambiar los parametros del if de abajo y viceversa
+if mensajeOriginal != False:
+    for i in range(len(mensajeOriginal)):
+       print("bloque" , i , mensajeOriginal[i])
+else:
+    print("Error Padding invalido")    
 
-        # Ajustamos los bytes ya descubiertos
-        for j in range(pos + 1, 8):
-            m2_byte = int(m2[j], 16)
-            c1_byte = int(c1[j * 8:(j + 1) * 8], 2)
-            nuevo = padding_val ^ m2_byte ^ c1_byte
-            r[j * 8:(j + 1) * 8] = list(f"{nuevo:08b}")
+print("-------------------------------- aca es la prueba del padding")
+#Prueba forzosa de padding invalido para que de error
+#insertamos un bin erroneo
+mensajetrucho = {0:"1010110101010111011111010000111000011111100101010010100100111101", 1: "1010110101010111011111010000111000011111100101010010100100111101"}
+mensajetruchodescifrado = descifrar(mensajetrucho, IV, K)
+print("mensajeTrucho 'descifrado'", mensajetruchodescifrado)
+if mensajetruchodescifrado != False:
+    for i in range(len(mensajetruchodescifrado)):
+       print("bloque" , i , mensajetruchodescifrado[i])
+else:
+    print("Error Padding invalido") 
 
-        # Buscamos el valor correcto del byte actual
-        for guess in range(256):
-            r[pos * 8:(pos + 1) * 8] = list(f"{guess:08b}")
-
-            if padding_oracle("".join(r), c2, clave):
-                d_byte = guess ^ padding_val
-                print(d_byte)
-                c1_byte = int(c1[pos * 8:(pos + 1) * 8], 2)
-                print(c1_byte)
-                m2_byte = d_byte ^ c1_byte
-                print(m2_byte)
-                m2[pos] = f"{m2_byte:02X}"  # Guardamos en HEX
-                print(m2)
-                break
-        else:
-            raise Exception(f"No se encontró padding válido en byte {pos}")
-
-    return "".join(m2)
-
-
-
+print("-------------------------------- aca es la prueba del ataque")
 # Parámetros de prueba
 m2 = "3f5200ae7d152ae425146"
 IV2 = "52a5b96f8d221b56"
@@ -420,18 +363,14 @@ K2 = "45DF9D2B3A635414"
 
 # Paso 1: Separar bloques y aplicar padding
 bloques2 = separarbloques(m2)
-print("paso 1", bloques2)
+print("Bloques separados + padding", bloques2)
 
 # Paso 2: Cifrar
 mensajecifrado2 = cifrar(bloques2, IV2, K2)
-print("paso 2", mensajecifrado2)
+print("bloques cifrados en bin", mensajecifrado2)
 # Paso 3: Elegir los bloques
 c1 = mensajecifrado2[0]
 c2 = mensajecifrado2[1]
+#Paso 4: atacar y descifrar
 mensaje_recuperado = ataque_padding_oracle(c1, c2, K2)
 print("Mensaje recuperado (m2):", mensaje_recuperado)
-# Paso 4: Ejecutar el ataque
-#m2_hex = ataque_padding_oracle(c1, c2, K)
-#print("paso 4", m2_hex)
-#print("\nBloque recuperado (m2) por ataque:", m2_hex)
-#print("Bloque original (m2 real):", bloques[1].upper())
